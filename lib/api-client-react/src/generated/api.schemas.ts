@@ -29,6 +29,46 @@ export const AdminConfigAuditSchema = {
   unavailable: 'unavailable',
 } as const;
 
+export type AdminConfigProfilesSchema = typeof AdminConfigProfilesSchema[keyof typeof AdminConfigProfilesSchema];
+
+
+export const AdminConfigProfilesSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigReportsSchema = typeof AdminConfigReportsSchema[keyof typeof AdminConfigReportsSchema];
+
+
+export const AdminConfigReportsSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigModerationSchema = typeof AdminConfigModerationSchema[keyof typeof AdminConfigModerationSchema];
+
+
+export const AdminConfigModerationSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigPlatformAuditSchema = typeof AdminConfigPlatformAuditSchema[keyof typeof AdminConfigPlatformAuditSchema];
+
+
+export const AdminConfigPlatformAuditSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
 export type AdminConfigBase44Api = typeof AdminConfigBase44Api[keyof typeof AdminConfigBase44Api];
 
 
@@ -43,6 +83,10 @@ export interface AdminConfig {
   serviceRoleConfigured: boolean;
   moderatorSchema: AdminConfigModeratorSchema;
   auditSchema: AdminConfigAuditSchema;
+  profilesSchema: AdminConfigProfilesSchema;
+  reportsSchema: AdminConfigReportsSchema;
+  moderationSchema: AdminConfigModerationSchema;
+  platformAuditSchema: AdminConfigPlatformAuditSchema;
   base44Api: AdminConfigBase44Api;
   /** @nullable */
   supabaseUrl?: string | null;
@@ -88,7 +132,9 @@ export type AdminOverviewMetrics = {
   /** @nullable */
   users?: number | null;
   /** @nullable */
-  openReports?: number | null;
+  reports?: number | null;
+  /** @nullable */
+  moderationItems?: number | null;
   /** @nullable */
   pendingVerification?: number | null;
 };
@@ -97,6 +143,80 @@ export interface AdminOverview {
   integrations: IntegrationStatus[];
   /** Counts are null until connected data is actually available. */
   metrics?: AdminOverviewMetrics;
+}
+
+export type AdminDataListStatus = typeof AdminDataListStatus[keyof typeof AdminDataListStatus];
+
+
+export const AdminDataListStatus = {
+  connected: 'connected',
+  not_connected: 'not_connected',
+  missing_schema: 'missing_schema',
+  unavailable: 'unavailable',
+} as const;
+
+export interface AdminUserSummary {
+  id: string;
+  /** @nullable */
+  username?: string | null;
+  /** @nullable */
+  displayName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export interface AdminUserList {
+  status: AdminDataListStatus;
+  message?: string;
+  entries: AdminUserSummary[];
+}
+
+export interface AdminReportSummary {
+  id: string;
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  targetType?: string | null;
+  /** @nullable */
+  targetId?: string | null;
+  /** @nullable */
+  reporterId?: string | null;
+  /** @nullable */
+  reportedUserId?: string | null;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export interface AdminReportList {
+  status: AdminDataListStatus;
+  message?: string;
+  entries: AdminReportSummary[];
+}
+
+export interface AdminModerationSummary {
+  id: string;
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  action?: string | null;
+  /** @nullable */
+  targetType?: string | null;
+  /** @nullable */
+  targetId?: string | null;
+  /** @nullable */
+  moderatorId?: string | null;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export interface AdminModerationList {
+  status: AdminDataListStatus;
+  message?: string;
+  entries: AdminModerationSummary[];
 }
 
 export type AdminAuditLogOutcome = typeof AdminAuditLogOutcome[keyof typeof AdminAuditLogOutcome];
@@ -136,4 +256,11 @@ export interface AdminAuditLogList {
   message?: string;
   entries: AdminAuditLog[];
 }
+
+export type GetAdminUsersParams = {
+/**
+ * @maxLength 100
+ */
+search?: string;
+};
 

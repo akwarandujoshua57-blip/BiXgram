@@ -13,7 +13,9 @@ export type AdminOverviewMetrics = {
   /** @nullable */
   users?: number | null;
   /** @nullable */
-  openReports?: number | null;
+  reports?: number | null;
+  /** @nullable */
+  moderationItems?: number | null;
   /** @nullable */
   pendingVerification?: number | null;
 };

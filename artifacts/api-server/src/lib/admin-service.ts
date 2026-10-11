@@ -2,7 +2,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminAuditLogList,
   AdminConfig,
+  AdminModerationList,
   AdminOverview,
+  AdminReportList,
+  AdminUserList,
 } from "@workspace/api-zod";
 import {
   ADMIN_PERMISSIONS,
@@ -13,11 +16,32 @@ import {
   normalizeEmail,
   type VerifiedIdentity,
 } from "./admin-access";
+import { logger } from "./logger";
 
 const MODERATOR_TABLE = "bixgram_admin_moderators";
 const AUDIT_TABLE = "bixgram_admin_audit_logs";
+const PLATFORM_TABLES = ["profiles", "reports", "moderation", "audit_logs"] as const;
+type PlatformTable = (typeof PLATFORM_TABLES)[number];
+type RestSchemaDocument = {
+  definitions?: Record<string, { properties?: Record<string, unknown> }>;
+  components?: {
+    schemas?: Record<string, { properties?: Record<string, unknown> }>;
+  };
+  paths?: Record<string, {
+    get?: {
+      responses?: Record<string, {
+        schema?: { $ref?: string };
+      }>;
+    };
+  }>;
+};
 
 type SchemaStatus = AdminConfig["moderatorSchema"];
+type DataListStatus = AdminUserList["status"];
+type InspectableTable =
+  | typeof MODERATOR_TABLE
+  | typeof AUDIT_TABLE
+  | PlatformTable;
 
 export interface SecurityEventInput {
   actorUserId: string | null;
@@ -31,8 +55,110 @@ export interface AdminService {
   getConfig(): Promise<AdminConfig>;
   resolveAuthorization(token: string): Promise<AuthorizationResolution>;
   recordSecurityEvent(event: SecurityEventInput): Promise<void>;
-  getOverview(): Promise<AdminOverview>;
+  getOverview(actor: AdminActor): Promise<AdminOverview>;
+  getUsers(search: string): Promise<AdminUserList>;
+  getReports(): Promise<AdminReportList>;
+  getModeration(): Promise<AdminModerationList>;
   getAuditLogs(): Promise<AdminAuditLogList>;
+}
+
+let restSchemaCache:
+  | { expiresAt: number; document: RestSchemaDocument | null }
+  | undefined;
+
+async function getRestSchema(): Promise<RestSchemaDocument | null> {
+  if (restSchemaCache && restSchemaCache.expiresAt > Date.now()) {
+    return restSchemaCache.document;
+  }
+
+  const config = environment();
+  if (!config.supabaseUrl || !config.serviceRoleKey) return null;
+
+  try {
+    const endpoint = new URL("/rest/v1/", config.supabaseUrl);
+    const response = await fetch(endpoint, {
+      headers: {
+        apikey: config.serviceRoleKey,
+        authorization: `Bearer ${config.serviceRoleKey}`,
+        accept: "application/openapi+json",
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      restSchemaCache = { expiresAt: Date.now() + 30_000, document: null };
+      return null;
+    }
+
+    const document = (await response.json()) as RestSchemaDocument;
+    restSchemaCache = { expiresAt: Date.now() + 30_000, document };
+    return document;
+  } catch {
+    restSchemaCache = { expiresAt: Date.now() + 30_000, document: null };
+    return null;
+  }
+}
+
+async function getTableColumns(table: PlatformTable): Promise<Set<string> | null> {
+  const document = await getRestSchema();
+  if (!document) return null;
+
+  const schemas = {
+    ...document.definitions,
+    ...document.components?.schemas,
+  };
+  let definition = schemas[table];
+  if (!definition) {
+    const reference = document.paths?.[`/${table}`]?.get?.responses?.["200"]
+      ?.schema?.$ref;
+    const referenceName = reference?.split("/").at(-1);
+    if (referenceName) definition = schemas[referenceName];
+  }
+  if (!definition?.properties) return null;
+  return new Set(Object.keys(definition.properties));
+}
+
+function toDataListStatus(status: SchemaStatus): DataListStatus {
+  if (status === "ready") return "connected";
+  if (status === "missing") return "missing_schema";
+  return status;
+}
+
+function schemaMessage(label: string, status: SchemaStatus): string {
+  if (status === "ready") return `${label} is reachable through the server-side Supabase connection.`;
+  if (status === "missing") return `The Supabase ${label} table is missing from the exposed schema.`;
+  if (status === "not_connected") return `The server-side Supabase connection is not configured.`;
+  return `The Supabase ${label} table could not be verified.`;
+}
+
+function nullableString(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return null;
+}
+
+function escapeLikeTerm(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function listFailure(
+  status: DataListStatus,
+  message: string,
+): { status: DataListStatus; message: string; entries: [] } {
+  return { status, message, entries: [] };
+}
+
+async function countRows(table: PlatformTable): Promise<number | null> {
+  const client = getServiceClient();
+  if (!client) return null;
+
+  try {
+    const { count, error } = await client
+      .from(table)
+      .select("*", { count: "exact", head: true });
+    return error || count === null ? null : count;
+  } catch {
+    return null;
+  }
 }
 
 function environment() {
@@ -90,15 +216,16 @@ function isMissingSchemaError(error: { code?: string; message?: string }) {
 }
 
 async function inspectTable(
-  table: typeof MODERATOR_TABLE | typeof AUDIT_TABLE,
+  table: InspectableTable,
 ): Promise<SchemaStatus> {
   const client = getServiceClient();
   if (!client) return "not_connected";
 
-  const columns =
-    table === MODERATOR_TABLE
-      ? "user_id,status,permissions"
-      : "id,actor_user_id,actor_email,action,affected_record_id,outcome,created_at";
+  const columns = table === MODERATOR_TABLE
+    ? "user_id,status,permissions"
+    : table === AUDIT_TABLE
+      ? "id,actor_user_id,actor_email,action,affected_record_id,outcome,created_at"
+      : "*";
 
   try {
     const { error } = await client
@@ -133,77 +260,24 @@ function toAllowedPermissions(value: unknown): AdminPermission[] {
   );
 }
 
-function noPlatformMetrics(): AdminOverview {
-  const unavailable = (key: string, label: string, message: string) => ({
-    key,
-    label,
-    status: "not_connected" as const,
-    message,
-  });
-
-  return {
-    integrations: [
-      unavailable(
-        "base44",
-        "Bixgram platform API",
-        "No authorized Base44 administration API is connected.",
-      ),
-      unavailable(
-        "users",
-        "User Management",
-        "Connect an authorized user-management API and confirm its schema.",
-      ),
-      unavailable(
-        "reports",
-        "Reports and Moderation",
-        "No reports API or connected report data is available.",
-      ),
-      unavailable(
-        "public-content",
-        "Public Content Moderation",
-        "No public-content moderation API is connected.",
-      ),
-      unavailable(
-        "channels",
-        "Channel Management",
-        "No authorized Channel management API is connected.",
-      ),
-      unavailable(
-        "live",
-        "Live Management",
-        "No authorized Live management API is connected.",
-      ),
-      unavailable(
-        "verification",
-        "Verification Requests",
-        "No verification-request API is connected.",
-      ),
-      unavailable(
-        "premium",
-        "Premium and Monetization",
-        "No monetization integration or platform data is connected.",
-      ),
-      unavailable(
-        "analytics",
-        "Platform Analytics",
-        "No real analytics source is connected.",
-      ),
-    ],
-    metrics: {
-      users: null,
-      openReports: null,
-      pendingVerification: null,
-    },
-  };
-}
-
 export function createAdminService(): AdminService {
   return {
     async getConfig() {
       const config = environment();
-      const [moderatorSchema, auditSchema] = await Promise.all([
+      const [
+        moderatorSchema,
+        auditSchema,
+        profilesSchema,
+        reportsSchema,
+        moderationSchema,
+        platformAuditSchema,
+      ] = await Promise.all([
         inspectTable(MODERATOR_TABLE),
         inspectTable(AUDIT_TABLE),
+        inspectTable("profiles"),
+        inspectTable("reports"),
+        inspectTable("moderation"),
+        inspectTable("audit_logs"),
       ]);
 
       return {
@@ -212,6 +286,10 @@ export function createAdminService(): AdminService {
         serviceRoleConfigured: config.serviceRoleConfigured,
         moderatorSchema,
         auditSchema,
+        profilesSchema,
+        reportsSchema,
+        moderationSchema,
+        platformAuditSchema,
         base44Api: "not_connected",
         // Supabase URL and anon key are public client configuration. The
         // service-role key and owner email are deliberately never returned.
@@ -301,8 +379,338 @@ export function createAdminService(): AdminService {
       }
     },
 
-    async getOverview() {
-      return noPlatformMetrics();
+    async getOverview(actor) {
+      const config = environment();
+      const [
+        profilesSchema,
+        reportsSchema,
+        moderationSchema,
+        auditSchema,
+        users,
+        reports,
+        moderationItems,
+      ] = await Promise.all([
+        inspectTable("profiles"),
+        inspectTable("reports"),
+        inspectTable("moderation"),
+        inspectTable(AUDIT_TABLE),
+        countRows("profiles"),
+        countRows("reports"),
+        countRows("moderation"),
+      ]);
+
+      const integration = (
+        key: string,
+        label: string,
+        status: AdminOverview["integrations"][number]["status"],
+        message: string,
+      ) => ({ key, label, status, message });
+      const platformStatus = (tableStatus: SchemaStatus) =>
+        tableStatus === "ready"
+          ? "connected" as const
+          : tableStatus === "missing"
+            ? "missing_schema" as const
+            : tableStatus;
+
+      return {
+        integrations: [
+          integration(
+            "supabase-auth",
+            "Supabase Auth",
+            config.authConfigured ? "connected" : "not_connected",
+            "This protected request was verified against Supabase Auth.",
+          ),
+          integration(
+            "owner-console",
+            "Owner Console",
+            actor.role === "OWNER" && config.ownerConfigured
+              ? "connected"
+              : "not_connected",
+            actor.role === "OWNER"
+              ? "The API verified the configured owner identity for this session."
+              : "Owner-only controls require the configured owner identity.",
+          ),
+          integration(
+            "profiles",
+            "Supabase profiles",
+            platformStatus(profilesSchema),
+            schemaMessage("profiles", profilesSchema),
+          ),
+          integration(
+            "reports",
+            "Supabase reports",
+            platformStatus(reportsSchema),
+            schemaMessage("reports", reportsSchema),
+          ),
+          integration(
+            "moderation",
+            "Supabase moderation",
+            platformStatus(moderationSchema),
+            schemaMessage("moderation", moderationSchema),
+          ),
+          integration(
+            "audit",
+            "Admin Studio audit store",
+            platformStatus(auditSchema),
+            schemaMessage("admin audit-log", auditSchema),
+          ),
+          integration(
+            "base44",
+            "Bixgram Platform API",
+            "not_connected",
+            "Base44 is a separate system; no authorized API or backend function is configured.",
+          ),
+          integration(
+            "channels",
+            "Channel Management API",
+            "not_connected",
+            "No authorized channel-management API is configured.",
+          ),
+          integration(
+            "live",
+            "Live Management API",
+            "not_connected",
+            "No authorized live-management API is configured.",
+          ),
+        ],
+        metrics: {
+          users,
+          reports,
+          moderationItems,
+          pendingVerification: null,
+        },
+      };
+    },
+
+    async getUsers(search) {
+      const status = await inspectTable("profiles");
+      if (status !== "ready") {
+        return listFailure(
+          toDataListStatus(status),
+          schemaMessage("profiles", status),
+        );
+      }
+
+      const client = getServiceClient();
+      const columns = await getTableColumns("profiles");
+      if (!client || !columns) {
+        return listFailure(
+          "unavailable",
+          "The profiles table is reachable, but its searchable fields could not be safely verified.",
+        );
+      }
+
+      const idColumn = columns.has("id")
+        ? "id"
+        : columns.has("user_id")
+          ? "user_id"
+          : null;
+      if (!idColumn) {
+        return listFailure(
+          "unavailable",
+          "The profiles table has no recognized account identifier; no user records were returned.",
+        );
+      }
+
+      const selected = [
+        idColumn,
+        "email",
+        "username",
+        "display_name",
+        "full_name",
+        "status",
+        "created_at",
+      ].filter((column, index, list) =>
+        columns.has(column) && list.indexOf(column) === index,
+      );
+      const queryText = search.trim();
+      const searchColumn = ["email", "username", "display_name", "full_name"]
+        .find((column) => columns.has(column));
+      if (queryText && !searchColumn) {
+        return listFailure(
+          "unavailable",
+          "The profiles table has no verified email, username, or display-name field for search.",
+        );
+      }
+
+      try {
+        let query = client.from("profiles").select(selected.join(","));
+        if (queryText && searchColumn) {
+          query = query.ilike(searchColumn, `%${escapeLikeTerm(queryText)}%`);
+        }
+        if (columns.has("created_at")) {
+          query = query.order("created_at", { ascending: false });
+        }
+        const { data, error } = await query.limit(100);
+        if (error || !data) {
+          return listFailure(
+            "unavailable",
+            "User profiles could not be read using the verified field allowlist.",
+          );
+        }
+
+        return {
+          status: "connected",
+          message: data.length
+            ? `Showing ${data.length} profile${data.length === 1 ? "" : "s"} (maximum 100 per request).`
+            : queryText
+              ? "No profiles match this search."
+              : "No registered user profiles are present yet.",
+          entries: data.map((value) => {
+            const row = value as Record<string, unknown>;
+            return {
+              id: String(row[idColumn]),
+              username: nullableString(row.username),
+              displayName: nullableString(row.display_name ?? row.full_name),
+              email: nullableString(row.email),
+              status: nullableString(row.status),
+              createdAt: nullableString(row.created_at),
+            };
+          }),
+        };
+      } catch {
+        return listFailure("unavailable", "User profiles could not be read.");
+      }
+    },
+
+    async getReports() {
+      const status = await inspectTable("reports");
+      if (status !== "ready") {
+        return listFailure(
+          toDataListStatus(status),
+          schemaMessage("reports", status),
+        );
+      }
+
+      const client = getServiceClient();
+      const columns = await getTableColumns("reports");
+      if (!client || !columns) {
+        return listFailure(
+          "unavailable",
+          "The reports table is reachable, but its safe metadata fields could not be verified.",
+        );
+      }
+
+      const idColumn = columns.has("id") ? "id" : null;
+      if (!idColumn) {
+        return listFailure(
+          "unavailable",
+          "The reports table has no recognized report identifier; no report records were returned.",
+        );
+      }
+      const selected = [
+        idColumn,
+        "status",
+        "target_type",
+        "target_id",
+        "reporter_id",
+        "reporter_user_id",
+        "reported_user_id",
+        "created_at",
+      ].filter((column, index, list) =>
+        columns.has(column) && list.indexOf(column) === index,
+      );
+
+      try {
+        let query = client.from("reports").select(selected.join(","));
+        if (columns.has("created_at")) {
+          query = query.order("created_at", { ascending: false });
+        }
+        const { data, error } = await query.limit(100);
+        if (error || !data) {
+          return listFailure("unavailable", "Report metadata could not be read.");
+        }
+        return {
+          status: "connected",
+          message: data.length
+            ? `Showing ${data.length} report${data.length === 1 ? "" : "s"} (maximum 100 per request). Report text, attachments, and message content are not queried.`
+            : "No report records are present yet. Report text, attachments, and message content are not queried.",
+          entries: data.map((value) => {
+            const row = value as Record<string, unknown>;
+            return {
+              id: String(row[idColumn]),
+              status: nullableString(row.status),
+              targetType: nullableString(row.target_type),
+              targetId: nullableString(row.target_id),
+              reporterId: nullableString(row.reporter_id ?? row.reporter_user_id),
+              reportedUserId: nullableString(row.reported_user_id),
+              createdAt: nullableString(row.created_at),
+            };
+          }),
+        };
+      } catch {
+        return listFailure("unavailable", "Report metadata could not be read.");
+      }
+    },
+
+    async getModeration() {
+      const status = await inspectTable("moderation");
+      if (status !== "ready") {
+        return listFailure(
+          toDataListStatus(status),
+          schemaMessage("moderation", status),
+        );
+      }
+
+      const client = getServiceClient();
+      const columns = await getTableColumns("moderation");
+      if (!client || !columns) {
+        return listFailure(
+          "unavailable",
+          "The moderation table is reachable, but its safe metadata fields could not be verified.",
+        );
+      }
+
+      const idColumn = columns.has("id") ? "id" : null;
+      if (!idColumn) {
+        return listFailure(
+          "unavailable",
+          "The moderation table has no recognized record identifier; no records were returned.",
+        );
+      }
+      const selected = [
+        idColumn,
+        "status",
+        "action",
+        "target_type",
+        "target_id",
+        "moderator_id",
+        "reviewer_id",
+        "created_at",
+      ].filter((column, index, list) =>
+        columns.has(column) && list.indexOf(column) === index,
+      );
+
+      try {
+        let query = client.from("moderation").select(selected.join(","));
+        if (columns.has("created_at")) {
+          query = query.order("created_at", { ascending: false });
+        }
+        const { data, error } = await query.limit(100);
+        if (error || !data) {
+          return listFailure("unavailable", "Moderation metadata could not be read.");
+        }
+        return {
+          status: "connected",
+          message: data.length
+            ? `Showing ${data.length} moderation records (maximum 100 per request). Content bodies are not queried.`
+            : "No moderation records are present yet. Content bodies are not queried.",
+          entries: data.map((value) => {
+            const row = value as Record<string, unknown>;
+            return {
+              id: String(row[idColumn]),
+              status: nullableString(row.status),
+              action: nullableString(row.action),
+              targetType: nullableString(row.target_type),
+              targetId: nullableString(row.target_id),
+              moderatorId: nullableString(row.moderator_id ?? row.reviewer_id),
+              createdAt: nullableString(row.created_at),
+            };
+          }),
+        };
+      } catch {
+        return listFailure("unavailable", "Moderation metadata could not be read.");
+      }
     },
 
     async getAuditLogs() {

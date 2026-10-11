@@ -27,6 +27,10 @@ export const GetAdminConfigResponse = zod.object({
   "serviceRoleConfigured": zod.boolean(),
   "moderatorSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "auditSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "profilesSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "reportsSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "moderationSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "platformAuditSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "base44Api": zod.enum(['connected', 'not_connected']),
   "supabaseUrl": zod.string().nullish(),
   "supabaseAnonKey": zod.string().nullish()
@@ -55,9 +59,71 @@ export const GetAdminOverviewResponse = zod.object({
 })),
   "metrics": zod.object({
   "users": zod.number().int().nullish(),
-  "openReports": zod.number().int().nullish(),
+  "reports": zod.number().int().nullish(),
+  "moderationItems": zod.number().int().nullish(),
   "pendingVerification": zod.number().int().nullish()
 }).optional().describe('Counts are null until connected data is actually available.')
+})
+
+
+/**
+ * @summary Search registered users from the connected profiles table
+ */
+export const getAdminUsersQuerySearchMax = 100;
+
+
+
+export const GetAdminUsersQueryParams = zod.object({
+  "search": zod.coerce.string().max(getAdminUsersQuerySearchMax).optional()
+})
+
+export const GetAdminUsersResponse = zod.object({
+  "status": zod.enum(['connected', 'not_connected', 'missing_schema', 'unavailable']),
+  "message": zod.string().optional(),
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "username": zod.string().nullish(),
+  "displayName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "status": zod.string().nullish(),
+  "createdAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary List report metadata without message or attachment content
+ */
+export const GetAdminReportsResponse = zod.object({
+  "status": zod.enum(['connected', 'not_connected', 'missing_schema', 'unavailable']),
+  "message": zod.string().optional(),
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "status": zod.string().nullish(),
+  "targetType": zod.string().nullish(),
+  "targetId": zod.string().nullish(),
+  "reporterId": zod.string().nullish(),
+  "reportedUserId": zod.string().nullish(),
+  "createdAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary List public moderation metadata without content bodies
+ */
+export const GetAdminModerationResponse = zod.object({
+  "status": zod.enum(['connected', 'not_connected', 'missing_schema', 'unavailable']),
+  "message": zod.string().optional(),
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "status": zod.string().nullish(),
+  "action": zod.string().nullish(),
+  "targetType": zod.string().nullish(),
+  "targetId": zod.string().nullish(),
+  "moderatorId": zod.string().nullish(),
+  "createdAt": zod.coerce.date().nullish()
+}))
 })
 
 

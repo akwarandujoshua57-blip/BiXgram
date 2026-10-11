@@ -7,7 +7,11 @@
  */
 import type { AdminConfigAuditSchema } from './adminConfigAuditSchema';
 import type { AdminConfigBase44Api } from './adminConfigBase44Api';
+import type { AdminConfigModerationSchema } from './adminConfigModerationSchema';
 import type { AdminConfigModeratorSchema } from './adminConfigModeratorSchema';
+import type { AdminConfigPlatformAuditSchema } from './adminConfigPlatformAuditSchema';
+import type { AdminConfigProfilesSchema } from './adminConfigProfilesSchema';
+import type { AdminConfigReportsSchema } from './adminConfigReportsSchema';
 
 export interface AdminConfig {
   authConfigured: boolean;
@@ -15,6 +19,10 @@ export interface AdminConfig {
   serviceRoleConfigured: boolean;
   moderatorSchema: AdminConfigModeratorSchema;
   auditSchema: AdminConfigAuditSchema;
+  profilesSchema: AdminConfigProfilesSchema;
+  reportsSchema: AdminConfigReportsSchema;
+  moderationSchema: AdminConfigModerationSchema;
+  platformAuditSchema: AdminConfigPlatformAuditSchema;
   base44Api: AdminConfigBase44Api;
   /** @nullable */
   supabaseUrl?: string | null;

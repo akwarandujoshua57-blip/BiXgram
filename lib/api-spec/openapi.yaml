@@ -75,6 +75,67 @@ paths:
           description: Missing or invalid verified Supabase session
         "403":
           description: User is not authorized for administration
+  /admin/users:
+    get:
+      operationId: getAdminUsers
+      tags: [admin]
+      summary: Search registered users from the connected profiles table
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+      responses:
+        "200":
+          description: User records or an explicit disconnected state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserList"
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: User is not authorized to read registered users
+  /admin/reports:
+    get:
+      operationId: getAdminReports
+      tags: [admin]
+      summary: List report metadata without message or attachment content
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Report metadata or an explicit disconnected state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReportList"
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: User is not authorized to review reports
+  /admin/moderation:
+    get:
+      operationId: getAdminModeration
+      tags: [admin]
+      summary: List public moderation metadata without content bodies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Moderation metadata or an explicit disconnected state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminModerationList"
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: User is not authorized to read moderation records
   /admin/audit-logs:
     get:
       operationId: getAdminAuditLogs
@@ -109,13 +170,17 @@ components:
         - status
     AdminConfig:
       type: object
-      required: [authConfigured, ownerConfigured, serviceRoleConfigured, moderatorSchema, auditSchema, base44Api]
+      required: [authConfigured, ownerConfigured, serviceRoleConfigured, moderatorSchema, auditSchema, profilesSchema, reportsSchema, moderationSchema, platformAuditSchema, base44Api]
       properties:
         authConfigured: { type: boolean }
         ownerConfigured: { type: boolean }
         serviceRoleConfigured: { type: boolean }
         moderatorSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         auditSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        profilesSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        reportsSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        moderationSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        platformAuditSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         base44Api: { type: string, enum: [connected, not_connected] }
         supabaseUrl: { type: [string, "null"] }
         supabaseAnonKey: { type: [string, "null"] }
@@ -148,8 +213,71 @@ components:
           description: Counts are null until connected data is actually available.
           properties:
             users: { type: [integer, "null"] }
-            openReports: { type: [integer, "null"] }
+            reports: { type: [integer, "null"] }
+            moderationItems: { type: [integer, "null"] }
             pendingVerification: { type: [integer, "null"] }
+    AdminDataListStatus:
+      type: string
+      enum: [connected, not_connected, missing_schema, unavailable]
+    AdminUserSummary:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        username: { type: ["string", "null"] }
+        displayName: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        status: { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"], format: date-time }
+    AdminUserList:
+      type: object
+      required: [status, entries]
+      properties:
+        status: { $ref: "#/components/schemas/AdminDataListStatus" }
+        message: { type: string }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/AdminUserSummary" }
+    AdminReportSummary:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        status: { type: ["string", "null"] }
+        targetType: { type: ["string", "null"] }
+        targetId: { type: ["string", "null"] }
+        reporterId: { type: ["string", "null"] }
+        reportedUserId: { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"], format: date-time }
+    AdminReportList:
+      type: object
+      required: [status, entries]
+      properties:
+        status: { $ref: "#/components/schemas/AdminDataListStatus" }
+        message: { type: string }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/AdminReportSummary" }
+    AdminModerationSummary:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        status: { type: ["string", "null"] }
+        action: { type: ["string", "null"] }
+        targetType: { type: ["string", "null"] }
+        targetId: { type: ["string", "null"] }
+        moderatorId: { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"], format: date-time }
+    AdminModerationList:
+      type: object
+      required: [status, entries]
+      properties:
+        status: { $ref: "#/components/schemas/AdminDataListStatus" }
+        message: { type: string }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/AdminModerationSummary" }
     AdminAuditLog:
       type: object
       required: [id, action, outcome, createdAt]
