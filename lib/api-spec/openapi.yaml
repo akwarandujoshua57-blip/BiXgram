@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: admin
+    description: Bixgram Admin Studio security and connection status
 paths:
   /healthz:
     get:
@@ -24,7 +26,79 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /admin/config:
+    get:
+      operationId: getAdminConfig
+      tags: [admin]
+      summary: Get non-secret configuration status
+      description: Reports whether authentication and integrations are configured. The anon key is public and returned only to initialize Supabase Auth; privileged keys are never returned.
+      responses:
+        "200":
+          description: Configuration status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfig"
+  /admin/session:
+    get:
+      operationId: getAdminSession
+      tags: [admin]
+      summary: Resolve the current verified administrator
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authorized owner or approved moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSession"
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: User is not the configured owner or an approved moderator
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [admin]
+      summary: Get real integration readiness for protected admin areas
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Connection status; no synthetic metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverview"
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: User is not authorized for administration
+  /admin/audit-logs:
+    get:
+      operationId: getAdminAuditLogs
+      tags: [admin]
+      summary: List security audit records for the configured owner
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Audit records, or an explicit unavailable state if the audit table is not connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuditLogList"
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: Owner access required
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +107,67 @@ components:
           type: string
       required:
         - status
+    AdminConfig:
+      type: object
+      required: [authConfigured, ownerConfigured, serviceRoleConfigured, moderatorSchema, auditSchema, base44Api]
+      properties:
+        authConfigured: { type: boolean }
+        ownerConfigured: { type: boolean }
+        serviceRoleConfigured: { type: boolean }
+        moderatorSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        auditSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        base44Api: { type: string, enum: [connected, not_connected] }
+        supabaseUrl: { type: [string, "null"] }
+        supabaseAnonKey: { type: [string, "null"] }
+    AdminSession:
+      type: object
+      required: [role, permissions, emailVerified]
+      properties:
+        role: { type: string, enum: [OWNER, MODERATOR] }
+        permissions:
+          type: array
+          items: { type: string }
+        emailVerified: { type: boolean }
+    IntegrationStatus:
+      type: object
+      required: [key, label, status, message]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        status: { type: string, enum: [connected, not_connected, missing_schema, unavailable] }
+        message: { type: string }
+    AdminOverview:
+      type: object
+      required: [integrations]
+      properties:
+        integrations:
+          type: array
+          items: { $ref: "#/components/schemas/IntegrationStatus" }
+        metrics:
+          type: object
+          description: Counts are null until connected data is actually available.
+          properties:
+            users: { type: [integer, "null"] }
+            openReports: { type: [integer, "null"] }
+            pendingVerification: { type: [integer, "null"] }
+    AdminAuditLog:
+      type: object
+      required: [id, action, outcome, createdAt]
+      properties:
+        id: { type: string }
+        actorUserId: { type: [string, "null"] }
+        actorEmail: { type: [string, "null"] }
+        action: { type: string }
+        affectedRecordId: { type: [string, "null"] }
+        outcome: { type: string, enum: [success, denied, error] }
+        createdAt: { type: string, format: date-time }
+    AdminAuditLogList:
+      type: object
+      required: [status, entries]
+      properties:
+        status: { type: string, enum: [connected, not_connected, missing_schema, unavailable] }
+        message: { type: string }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/AdminAuditLog" }
 

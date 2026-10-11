@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Bixgram Admin Studio"
+description = "A secure, owner-controlled administration app for preparing future management of the separate Bixgram social platform. It provides verified Supabase authentication, server-side role authorization, audit foundations, and honest disconnected states until authorized backend integrations are configured."
+version = "1.0.0"
+id = "artifacts/bixgram-admin-studio"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18281
+
+[services.development]
+run = "pnpm --filter @workspace/bixgram-admin-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/bixgram-admin-studio", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/bixgram-admin-studio/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18281"
+BASE_PATH = "/"
