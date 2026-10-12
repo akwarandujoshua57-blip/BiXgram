@@ -17,5 +17,11 @@ export type AdminOverviewMetrics = {
   /** @nullable */
   moderationItems?: number | null;
   /** @nullable */
-  pendingVerification?: number | null;
+  verificationRequests?: number | null;
+  /** @nullable */
+  channelApprovals?: number | null;
+  /** @nullable */
+  featuredItems?: number | null;
+  /** @nullable */
+  dailyPrizes?: number | null;
 };

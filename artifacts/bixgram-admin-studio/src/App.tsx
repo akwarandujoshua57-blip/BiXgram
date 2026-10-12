@@ -11,14 +11,17 @@ import {
 } from 'lucide-react';
 import {
   getGetAdminAuditLogsQueryKey, getGetAdminOverviewQueryKey, getGetAdminSessionQueryKey,
-  setAuthTokenGetter, useGetAdminAuditLogs, useGetAdminConfig,
+  setAuthTokenGetter, setBaseUrl, useGetAdminAuditLogs, useGetAdminConfig,
   useGetAdminOverview, useGetAdminSession, useHealthCheck,
   type AdminAuditLogList, type AdminConfig, type AdminOverview, type AdminSession,
 } from '@workspace/api-client-react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { ContentPage, DatasetPage, ReportsPage, UsersPage } from '@/components/admin-data-pages';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+setBaseUrl(import.meta.env.VITE_API_BASE_URL?.trim() || null);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 } },
@@ -82,7 +85,7 @@ function Sidebar({ path }: { path: string }) {
     </div>)}
     <div className="nav-bottom">
       <Link href="/settings" className="nav-link" data-testid="link-nav-setup-help"><LifeBuoy size={16} /><span>Setup guide</span></Link>
-      <div className="sidebar-foot"><div className="foot-signal"><i /> Private control center</div>Platform administration remains read-only until integrations are connected.</div>
+      <div className="sidebar-foot"><div className="foot-signal"><i /> Private control center</div>Connected Supabase data is read-only. Platform actions require a verified Bixgram API.</div>
     </div>
   </aside>;
 }
@@ -96,7 +99,7 @@ function Header({ session, onSignOut }: { session: AdminSession; onSignOut: () =
     <header className="topbar">
       <div className="crumb">Bixgram / <strong data-testid="text-current-page">{current}</strong></div>
       <div className="top-actions">
-        <span className="readiness-pill"><i /> Not connected yet</span>
+        <span className="readiness-pill"><i /> Verified admin session</span>
         <div className="owner-chip"><span className="owner-avatar">{initials}</span><span className="owner-email">{session.role === 'OWNER' ? 'Owner access' : 'Moderator access'}</span></div>
         <button className="signout" aria-label="Sign out" title="Sign out" onClick={onSignOut} data-testid="button-sign-out"><LogOut size={16} /></button>
       </div>
@@ -146,21 +149,22 @@ function OverviewPage({ overview, loading, error, retry }: { overview?: AdminOve
     <PageHeading eyebrow="Control room / 01" title="Platform readiness" description="A measured view of what is configured—and what still needs a real connection before Bixgram can be administered." />
     <div className="overview-hero">
       <section className="panel welcome-panel" data-testid="card-readiness-summary">
-        <div className="micro-label">OWNER CONSOLE · READ ONLY</div>
+        <div className="micro-label">OWNER CONSOLE · SUPABASE DATA</div>
         <h2>Good to have you here.</h2>
-        <p>Bixgram Admin Studio is ready to prepare. Platform operations are intentionally unavailable until their source systems and data contracts are connected.</p>
-        <span className="inline-status"><i /> No platform changes can be made from this workspace</span>
+        <p>Connected Supabase records are read directly and shown with honest empty or unavailable states. Base44 remains separate until an authorized platform API is configured.</p>
+        <span className="inline-status"><i /> Platform-changing actions remain disabled</span>
       </section>
       <section className="panel readiness-card">
-        <div><div className="section-title">Integration posture</div><div className="section-note">Current signals from the admin API</div></div>
+        <div><div className="section-title">Integration posture</div><div className="section-note">Verified Supabase tables and platform APIs</div></div>
         <div className="readiness-big"><span className="readiness-mark"><Gauge size={19} /></span><div><div className="readiness-value">{connected} connected</div><div className="readiness-sub">of {overview.integrations.length} reported integrations</div></div></div>
-        <div><div className="quiet-rule" /><span className="inline-status"><i /> Platform controls are read-only</span></div>
+        <div><div className="quiet-rule" /><span className="inline-status"><i /> Platform write controls stay gated</span></div>
       </section>
     </div>
     <div className="metric-grid">
       <MetricCard label="Users" value={metrics?.users} icon={Users} />
-      <MetricCard label="Open reports" value={metrics?.openReports} icon={Flag} />
-      <MetricCard label="Pending verification" value={metrics?.pendingVerification} icon={UserRoundCheck} />
+      <MetricCard label="Reports" value={metrics?.reports} icon={Flag} />
+      <MetricCard label="Verification requests" value={metrics?.verificationRequests} icon={UserRoundCheck} />
+      <MetricCard label="Channel approvals" value={metrics?.channelApprovals} icon={Radio} />
     </div>
     <div className="content-grid">
       <section className="panel panel-pad" data-testid="section-integrations">
@@ -168,14 +172,21 @@ function OverviewPage({ overview, loading, error, retry }: { overview?: AdminOve
         {overview.integrations.length ? <div className="integration-list">{overview.integrations.map((item) => <IntegrationRow key={item.key} item={item} />)}</div> : <div className="audit-empty"><Cloud size={22} />No integration statuses have been reported.</div>}
       </section>
       <section className="panel panel-pad">
-        <div className="panel-head"><div><h2 className="section-title">Control surface</h2><div className="section-note">Administration areas awaiting source connections</div></div><LockKeyhole size={17} color="#b58bc7" /></div>
+        <div className="panel-head"><div><h2 className="section-title">Control surface</h2><div className="section-note">Connected data stays read-only until platform writes are authorized</div></div><LockKeyhole size={17} color="#b58bc7" /></div>
         <div className="area-list">
-          {[['Account lookup', Search], ['Reports & moderation', ShieldAlert], ['Public content review', Clapperboard], ['Channel & live reports', Radio], ['Verification & premium', Fingerprint]].map(([label, Icon]) => {
+          {[
+            ['Account lookup', Search, 'profiles'],
+            ['Reports & moderation', ShieldAlert, 'reports'],
+            ['Public content review', Clapperboard, 'featured-items'],
+            ['Channel approvals', Radio, 'channel-approvals'],
+            ['Verification requests', Fingerprint, 'verification-requests'],
+          ].map(([label, Icon, key]) => {
             const Glyph = Icon as LucideIcon;
-            return <div className="area-row" key={label as string}><Glyph size={14} /><span className="area-name">{label as string}</span><span className="area-state">Not connected yet</span></div>;
+            const status = overview.integrations.find((item) => item.key === key)?.status ?? 'unavailable';
+            return <div className="area-row" key={label as string}><Glyph size={14} /><span className="area-name">{label as string}</span><span className="area-state">{statusLabel(status)}</span></div>;
           })}
         </div>
-        <div className="notice" style={{ marginTop: 15 }}><ShieldCheck size={15} /><span><strong>Safe by design.</strong> No placeholder records or inferred counts are shown. Every platform action remains out of reach until a supported API exists.</span></div>
+        <div className="notice" style={{ marginTop: 15 }}><ShieldCheck size={15} /><span><strong>Safe by design.</strong> Counts come from connected tables; an actual zero is distinct from an unavailable source. Base44 actions remain out of reach without its authorized API.</span></div>
       </section>
     </div>
   </main>;
@@ -256,6 +267,16 @@ function ConfigurationPage({ config, loading, error, retry }: { config?: AdminCo
           <ConfigRow label="Owner account" description="Owner identity configured on the server" value={config.ownerConfigured ? 'connected' : 'not_connected'} />
           <ConfigRow label="Moderator schema" description="Source schema for approved moderators" value={config.moderatorSchema} />
           <ConfigRow label="Audit log schema" description="Source schema for owner audit records" value={config.auditSchema} />
+          <ConfigRow label="Profiles schema" description="Supabase profile records, read-only" value={config.profilesSchema} />
+          <ConfigRow label="Users schema" description="Fallback user table when profiles is not exposed" value={config.usersSchema} />
+          <ConfigRow label="Reports schema" description="Report metadata; message content is not fetched" value={config.reportsSchema} />
+          <ConfigRow label="Moderation schema" description="Public moderation metadata" value={config.moderationSchema} />
+          <ConfigRow label="Verification requests" description="Verification metadata only; no evidence files" value={config.verificationRequestsSchema} />
+          <ConfigRow label="Channel approvals" description="Supabase queue; no platform write API implied" value={config.channelApprovalsSchema} />
+          <ConfigRow label="Report reasons" description="Allowlisted reason labels and keys" value={config.reportReasonsSchema} />
+          <ConfigRow label="Featured items" description="Public item references only" value={config.featuredItemsSchema} />
+          <ConfigRow label="Daily prizes" description="Allowlisted prize metadata" value={config.dailyPrizesSchema} />
+          <ConfigRow label="Platform audit_logs" description="Separate from the Admin Studio audit store" value={config.platformAuditSchema} />
           <ConfigRow label="Base44 API" description="Platform data/API connection status" value={config.base44Api} />
           <ConfigRow label="Service role key" description="Server-only status; its value is never sent to this interface" value={config.serviceRoleConfigured ? 'connected' : 'not_connected'} />
         </div>
@@ -329,6 +350,12 @@ function AppWorkspace({ config, configLoading, configError, session, overview, o
     if (route === '/security') return <SecurityPage session={session} audit={audit} loading={auditLoading} error={auditError} retry={retryAudit} />;
     if (route === '/health') return <HealthPage />;
     if (route === '/settings') return <ConfigurationPage config={config} loading={configLoading} error={configError} retry={retryConfig} />;
+    if (route === '/users') return <UsersPage />;
+    if (route === '/reports') return <ReportsPage />;
+    if (route === '/content') return <ContentPage />;
+    if (route === '/channels') return <DatasetPage source="channel_approvals" />;
+    if (route === '/verification') return <DatasetPage source="verification_requests" />;
+    if (route === '/monetization') return <DatasetPage source="daily_prizes" />;
     if (route === '/moderators' && session.role !== 'OWNER') return <UnauthorizedPage message="The moderator directory is restricted to the verified owner account." />;
     if (route in disconnectedInfo) return <DisconnectedPage path={route} />;
     return <NotFound />;
@@ -394,9 +421,7 @@ function AppRouter() {
 
   const signOut = async () => {
     if (supabase) await supabase.auth.signOut();
-    queryClient.removeQueries({ queryKey: getGetAdminSessionQueryKey() });
-    queryClient.removeQueries({ queryKey: getGetAdminOverviewQueryKey() });
-    queryClient.removeQueries({ queryKey: getGetAdminAuditLogsQueryKey() });
+    queryClient.clear();
     setLocation('/signin');
   };
 

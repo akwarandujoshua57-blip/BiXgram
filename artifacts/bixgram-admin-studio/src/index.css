@@ -108,7 +108,7 @@ h1 { margin: 0; font-size: clamp(24px, 3vw, 32px); letter-spacing: -.055em; line
 .readiness-value { color: #f2e8f3; font-size: 20px; font-weight: 800; letter-spacing: -.05em; }
 .readiness-sub { color: #8e9db3; font-size: 10px; margin-top: 3px; }
 .quiet-rule { height: 1px; background: #29354a; margin: 16px 0 12px; }
-.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
 .metric-card { padding: 17px 18px; min-height: 109px; }
 .metric-top { display: flex; justify-content: space-between; align-items: center; color: #8797af; font-size: 10px; }
 .metric-icon { width: 29px; height: 29px; border: 1px solid #304359; background: #182d3e; color: #71d3dd; border-radius: 9px; display: grid; place-items: center; }
@@ -215,6 +215,7 @@ td.mono { font-family: var(--app-font-mono); color: #92a3ba; font-size: 9px; }
   .overview-hero { grid-template-columns: 1fr; }
   .welcome-panel { min-height: 180px; }
   .metric-grid { gap: 8px; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-card { padding: 13px; min-height: 103px; }
   .metric-number { font-size: 21px; }
   .metric-top { font-size: 9px; }

@@ -1,9 +1,27 @@
 import express, { type Express } from "express";
+import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+const allowedAdminOrigins = new Set(
+  (process.env.ADMIN_STUDIO_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      callback(null, !origin || allowedAdminOrigins.has(origin));
+    },
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type"],
+    maxAge: 600,
+  }),
+);
 
 app.use(
   pinoHttp({

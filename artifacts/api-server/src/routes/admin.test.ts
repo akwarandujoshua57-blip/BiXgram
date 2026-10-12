@@ -5,7 +5,11 @@ import type { Server } from "node:http";
 import type {
   AdminAuditLogList,
   AdminConfig,
+  AdminDataList,
+  AdminModerationList,
   AdminOverview,
+  AdminReportList,
+  AdminUserList,
 } from "@workspace/api-zod";
 import {
   canReviewAuditLogs,
@@ -48,6 +52,16 @@ const disconnectedConfig: AdminConfig = {
   serviceRoleConfigured: false,
   moderatorSchema: "not_connected",
   auditSchema: "not_connected",
+  profilesSchema: "not_connected",
+  usersSchema: "not_connected",
+  reportsSchema: "not_connected",
+  moderationSchema: "not_connected",
+  platformAuditSchema: "not_connected",
+  verificationRequestsSchema: "not_connected",
+  channelApprovalsSchema: "not_connected",
+  reportReasonsSchema: "not_connected",
+  featuredItemsSchema: "not_connected",
+  dailyPrizesSchema: "not_connected",
   base44Api: "not_connected",
   supabaseUrl: null,
   supabaseAnonKey: null,
@@ -62,7 +76,33 @@ const disconnectedOverview: AdminOverview = {
       message: "No authorized Base44 administration API is connected.",
     },
   ],
-  metrics: { users: null, openReports: null, pendingVerification: null },
+  metrics: {
+    users: null,
+    reports: null,
+    moderationItems: null,
+    verificationRequests: null,
+    channelApprovals: null,
+    featuredItems: null,
+    dailyPrizes: null,
+  },
+};
+
+const disconnectedUsers: AdminUserList = {
+  status: "not_connected",
+  message: "User source is not connected.",
+  entries: [],
+};
+
+const disconnectedReports: AdminReportList = {
+  status: "not_connected",
+  message: "Report source is not connected.",
+  entries: [],
+};
+
+const disconnectedModeration: AdminModerationList = {
+  status: "not_connected",
+  message: "Moderation source is not connected.",
+  entries: [],
 };
 
 const disconnectedAudit: AdminAuditLogList = {
@@ -129,6 +169,23 @@ const service: AdminService = {
   async getOverview() {
     return disconnectedOverview;
   },
+  async getUsers() {
+    return disconnectedUsers;
+  },
+  async getReports() {
+    return disconnectedReports;
+  },
+  async getModeration() {
+    return disconnectedModeration;
+  },
+  async getDataset(source) {
+    return {
+      source,
+      status: "not_connected",
+      message: "Data source is not connected.",
+      entries: [],
+    } satisfies AdminDataList;
+  },
   async getAuditLogs() {
     return disconnectedAudit;
   },
@@ -173,8 +230,19 @@ async function get(
 }
 
 test("unauthenticated users cannot read protected overview data", async () => {
-  const response = await get("/api/admin/overview");
-  assert.equal(response.status, 401);
+  const protectedRoutes = [
+    "/api/admin/session",
+    "/api/admin/overview",
+    "/api/admin/users",
+    "/api/admin/reports",
+    "/api/admin/moderation",
+    "/api/admin/data?source=verification_requests",
+    "/api/admin/audit-logs",
+  ];
+  for (const route of protectedRoutes) {
+    const response = await get(route);
+    assert.equal(response.status, 401, `${route} should require authentication`);
+  }
   assert.equal(events.at(-1)?.action, "admin.authorization.missing_bearer");
   assert.equal(events.at(-1)?.outcome, "denied");
 });
@@ -252,6 +320,19 @@ test("moderator access is limited to explicitly granted permissions", async () =
     ).status,
     404,
   );
+  assert.equal(
+    (await get("/api/admin/reports", "approved-moderator-token")).status,
+    403,
+  );
+  assert.equal(
+    (
+      await get(
+        "/api/admin/data?source=channel_approvals",
+        "approved-moderator-token",
+      )
+    ).status,
+    403,
+  );
 });
 
 test("changing record IDs cannot reach unimplemented user-record endpoints", async () => {
@@ -306,9 +387,48 @@ test("disconnected tables produce unavailable metrics instead of fake zeroes", a
   const data = (await response.json()) as AdminOverview;
   assert.deepEqual(data.metrics, {
     users: null,
-    openReports: null,
-    pendingVerification: null,
+    reports: null,
+    moderationItems: null,
+    verificationRequests: null,
+    channelApprovals: null,
+    featuredItems: null,
+    dailyPrizes: null,
   });
+});
+
+test("owner can read each fixed data source and arbitrary table names are rejected", async () => {
+  const authorized = "owner-test-token";
+  for (const source of [
+    "verification_requests",
+    "channel_approvals",
+    "report_reasons",
+    "featured_items",
+    "daily_prizes",
+  ]) {
+    const response = await get(
+      `/api/admin/data?source=${source}`,
+      authorized,
+    );
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as AdminDataList;
+    assert.equal(body.source, source);
+    assert.deepEqual(body.entries, []);
+  }
+  assert.equal(
+    (
+      await get("/api/admin/data?source=auth.users", authorized)
+    ).status,
+    400,
+  );
+});
+
+test("report metadata responses do not include content or message fields", async () => {
+  const response = await get("/api/admin/reports", "owner-test-token");
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as AdminReportList;
+  assert.deepEqual(body.entries, []);
+  assert.equal("body" in body, false);
+  assert.equal("messageContent" in body, false);
 });
 
 test("missing Base44 and audit integrations are explicitly disconnected", async () => {

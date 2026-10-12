@@ -7,11 +7,17 @@
  */
 import type { AdminConfigAuditSchema } from './adminConfigAuditSchema';
 import type { AdminConfigBase44Api } from './adminConfigBase44Api';
+import type { AdminConfigChannelApprovalsSchema } from './adminConfigChannelApprovalsSchema';
+import type { AdminConfigDailyPrizesSchema } from './adminConfigDailyPrizesSchema';
+import type { AdminConfigFeaturedItemsSchema } from './adminConfigFeaturedItemsSchema';
 import type { AdminConfigModerationSchema } from './adminConfigModerationSchema';
 import type { AdminConfigModeratorSchema } from './adminConfigModeratorSchema';
 import type { AdminConfigPlatformAuditSchema } from './adminConfigPlatformAuditSchema';
 import type { AdminConfigProfilesSchema } from './adminConfigProfilesSchema';
+import type { AdminConfigReportReasonsSchema } from './adminConfigReportReasonsSchema';
 import type { AdminConfigReportsSchema } from './adminConfigReportsSchema';
+import type { AdminConfigUsersSchema } from './adminConfigUsersSchema';
+import type { AdminConfigVerificationRequestsSchema } from './adminConfigVerificationRequestsSchema';
 
 export interface AdminConfig {
   authConfigured: boolean;
@@ -20,9 +26,15 @@ export interface AdminConfig {
   moderatorSchema: AdminConfigModeratorSchema;
   auditSchema: AdminConfigAuditSchema;
   profilesSchema: AdminConfigProfilesSchema;
+  usersSchema: AdminConfigUsersSchema;
   reportsSchema: AdminConfigReportsSchema;
   moderationSchema: AdminConfigModerationSchema;
   platformAuditSchema: AdminConfigPlatformAuditSchema;
+  verificationRequestsSchema: AdminConfigVerificationRequestsSchema;
+  channelApprovalsSchema: AdminConfigChannelApprovalsSchema;
+  reportReasonsSchema: AdminConfigReportReasonsSchema;
+  featuredItemsSchema: AdminConfigFeaturedItemsSchema;
+  dailyPrizesSchema: AdminConfigDailyPrizesSchema;
   base44Api: AdminConfigBase44Api;
   /** @nullable */
   supabaseUrl?: string | null;

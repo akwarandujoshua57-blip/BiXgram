@@ -39,6 +39,16 @@ export const AdminConfigProfilesSchema = {
   unavailable: 'unavailable',
 } as const;
 
+export type AdminConfigUsersSchema = typeof AdminConfigUsersSchema[keyof typeof AdminConfigUsersSchema];
+
+
+export const AdminConfigUsersSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
 export type AdminConfigReportsSchema = typeof AdminConfigReportsSchema[keyof typeof AdminConfigReportsSchema];
 
 
@@ -69,6 +79,56 @@ export const AdminConfigPlatformAuditSchema = {
   unavailable: 'unavailable',
 } as const;
 
+export type AdminConfigVerificationRequestsSchema = typeof AdminConfigVerificationRequestsSchema[keyof typeof AdminConfigVerificationRequestsSchema];
+
+
+export const AdminConfigVerificationRequestsSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigChannelApprovalsSchema = typeof AdminConfigChannelApprovalsSchema[keyof typeof AdminConfigChannelApprovalsSchema];
+
+
+export const AdminConfigChannelApprovalsSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigReportReasonsSchema = typeof AdminConfigReportReasonsSchema[keyof typeof AdminConfigReportReasonsSchema];
+
+
+export const AdminConfigReportReasonsSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigFeaturedItemsSchema = typeof AdminConfigFeaturedItemsSchema[keyof typeof AdminConfigFeaturedItemsSchema];
+
+
+export const AdminConfigFeaturedItemsSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
+export type AdminConfigDailyPrizesSchema = typeof AdminConfigDailyPrizesSchema[keyof typeof AdminConfigDailyPrizesSchema];
+
+
+export const AdminConfigDailyPrizesSchema = {
+  ready: 'ready',
+  missing: 'missing',
+  not_connected: 'not_connected',
+  unavailable: 'unavailable',
+} as const;
+
 export type AdminConfigBase44Api = typeof AdminConfigBase44Api[keyof typeof AdminConfigBase44Api];
 
 
@@ -84,9 +144,15 @@ export interface AdminConfig {
   moderatorSchema: AdminConfigModeratorSchema;
   auditSchema: AdminConfigAuditSchema;
   profilesSchema: AdminConfigProfilesSchema;
+  usersSchema: AdminConfigUsersSchema;
   reportsSchema: AdminConfigReportsSchema;
   moderationSchema: AdminConfigModerationSchema;
   platformAuditSchema: AdminConfigPlatformAuditSchema;
+  verificationRequestsSchema: AdminConfigVerificationRequestsSchema;
+  channelApprovalsSchema: AdminConfigChannelApprovalsSchema;
+  reportReasonsSchema: AdminConfigReportReasonsSchema;
+  featuredItemsSchema: AdminConfigFeaturedItemsSchema;
+  dailyPrizesSchema: AdminConfigDailyPrizesSchema;
   base44Api: AdminConfigBase44Api;
   /** @nullable */
   supabaseUrl?: string | null;
@@ -136,7 +202,13 @@ export type AdminOverviewMetrics = {
   /** @nullable */
   moderationItems?: number | null;
   /** @nullable */
-  pendingVerification?: number | null;
+  verificationRequests?: number | null;
+  /** @nullable */
+  channelApprovals?: number | null;
+  /** @nullable */
+  featuredItems?: number | null;
+  /** @nullable */
+  dailyPrizes?: number | null;
 };
 
 export interface AdminOverview {
@@ -219,6 +291,38 @@ export interface AdminModerationList {
   entries: AdminModerationSummary[];
 }
 
+export type AdminDataSource = typeof AdminDataSource[keyof typeof AdminDataSource];
+
+
+export const AdminDataSource = {
+  verification_requests: 'verification_requests',
+  channel_approvals: 'channel_approvals',
+  report_reasons: 'report_reasons',
+  featured_items: 'featured_items',
+  daily_prizes: 'daily_prizes',
+} as const;
+
+export interface AdminDataRecord {
+  id: string;
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  label?: string | null;
+  /** @nullable */
+  type?: string | null;
+  /** @nullable */
+  relatedId?: string | null;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export interface AdminDataList {
+  source: AdminDataSource;
+  status: AdminDataListStatus;
+  message?: string;
+  entries: AdminDataRecord[];
+}
+
 export type AdminAuditLogOutcome = typeof AdminAuditLogOutcome[keyof typeof AdminAuditLogOutcome];
 
 
@@ -263,4 +367,19 @@ export type GetAdminUsersParams = {
  */
 search?: string;
 };
+
+export type GetAdminDataParams = {
+source: GetAdminDataSource;
+};
+
+export type GetAdminDataSource = typeof GetAdminDataSource[keyof typeof GetAdminDataSource];
+
+
+export const GetAdminDataSource = {
+  verification_requests: 'verification_requests',
+  channel_approvals: 'channel_approvals',
+  report_reasons: 'report_reasons',
+  featured_items: 'featured_items',
+  daily_prizes: 'daily_prizes',
+} as const;
 

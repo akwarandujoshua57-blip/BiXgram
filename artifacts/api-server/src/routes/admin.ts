@@ -2,8 +2,14 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import {
   GetAdminAuditLogsResponse,
   GetAdminConfigResponse,
+  GetAdminDataQueryParams,
+  GetAdminDataResponse,
   GetAdminOverviewResponse,
+  GetAdminReportsResponse,
   GetAdminSessionResponse,
+  GetAdminModerationResponse,
+  GetAdminUsersQueryParams,
+  GetAdminUsersResponse,
 } from "@workspace/api-zod";
 import {
   canReviewAuditLogs,
@@ -194,10 +200,103 @@ export function createAdminRouter(
 
     try {
       response.json(
-        GetAdminOverviewResponse.parse(await dependencies.getOverview()),
+        GetAdminOverviewResponse.parse(await dependencies.getOverview(actor)),
       );
     } catch {
       response.status(503).json({ error: "Admin overview is unavailable." });
+    }
+  });
+
+  router.get("/admin/users", async (request, response) => {
+    const actor = await resolveActor(request, response, dependencies);
+    if (!actor) return;
+    if (!(await requirePermission(actor, "users:read", response, dependencies))) {
+      return;
+    }
+    const query = GetAdminUsersQueryParams.safeParse({
+      search: request.query.search,
+    });
+    if (!query.success) {
+      response.status(400).json({ error: "The user search term is invalid." });
+      return;
+    }
+    try {
+      response.json(
+        GetAdminUsersResponse.parse(
+          await dependencies.getUsers(query.data.search ?? ""),
+        ),
+      );
+    } catch {
+      response.status(503).json({ error: "User records are unavailable." });
+    }
+  });
+
+  router.get("/admin/reports", async (request, response) => {
+    const actor = await resolveActor(request, response, dependencies);
+    if (!actor) return;
+    if (!(await requirePermission(actor, "reports:read", response, dependencies))) {
+      return;
+    }
+    try {
+      response.json(
+        GetAdminReportsResponse.parse(await dependencies.getReports()),
+      );
+    } catch {
+      response.status(503).json({ error: "Report records are unavailable." });
+    }
+  });
+
+  router.get("/admin/moderation", async (request, response) => {
+    const actor = await resolveActor(request, response, dependencies);
+    if (!actor) return;
+    if (!(await requirePermission(actor, "content:read", response, dependencies))) {
+      return;
+    }
+    try {
+      response.json(
+        GetAdminModerationResponse.parse(await dependencies.getModeration()),
+      );
+    } catch {
+      response.status(503).json({ error: "Moderation records are unavailable." });
+    }
+  });
+
+  router.get("/admin/data", async (request, response) => {
+    const actor = await resolveActor(request, response, dependencies);
+    if (!actor) return;
+
+    const query = GetAdminDataQueryParams.safeParse({
+      source: request.query.source,
+    });
+    if (!query.success) {
+      response.status(400).json({ error: "The requested data source is unsupported." });
+      return;
+    }
+    const permissionBySource = {
+      verification_requests: "verification:read",
+      channel_approvals: "channels:read",
+      report_reasons: "reports:read",
+      featured_items: "content:read",
+      daily_prizes: "premium:read",
+    } as const;
+    if (
+      !(await requirePermission(
+        actor,
+        permissionBySource[query.data.source],
+        response,
+        dependencies,
+      ))
+    ) {
+      return;
+    }
+    try {
+      response.json(
+        GetAdminDataResponse.parse(
+          await dependencies.getDataset(query.data.source),
+        ),
+      );
+    } catch {
+      response.status(503).json({ error: "The requested data is unavailable." });
     }
   });
 

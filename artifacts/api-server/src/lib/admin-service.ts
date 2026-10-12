@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminAuditLogList,
   AdminConfig,
+  AdminDataList,
+  AdminDataSource,
   AdminModerationList,
   AdminOverview,
   AdminReportList,
@@ -20,7 +22,18 @@ import { logger } from "./logger";
 
 const MODERATOR_TABLE = "bixgram_admin_moderators";
 const AUDIT_TABLE = "bixgram_admin_audit_logs";
-const PLATFORM_TABLES = ["profiles", "reports", "moderation", "audit_logs"] as const;
+const PLATFORM_TABLES = [
+  "profiles",
+  "users",
+  "reports",
+  "moderation",
+  "audit_logs",
+  "verification_requests",
+  "channel_approvals",
+  "report_reasons",
+  "featured_items",
+  "daily_prizes",
+] as const;
 type PlatformTable = (typeof PLATFORM_TABLES)[number];
 type RestSchemaDocument = {
   definitions?: Record<string, { properties?: Record<string, unknown> }>;
@@ -30,7 +43,7 @@ type RestSchemaDocument = {
   paths?: Record<string, {
     get?: {
       responses?: Record<string, {
-        schema?: { $ref?: string };
+        schema?: { $ref?: string; items?: { $ref?: string } };
       }>;
     };
   }>;
@@ -59,6 +72,7 @@ export interface AdminService {
   getUsers(search: string): Promise<AdminUserList>;
   getReports(): Promise<AdminReportList>;
   getModeration(): Promise<AdminModerationList>;
+  getDataset(source: AdminDataSource): Promise<AdminDataList>;
   getAuditLogs(): Promise<AdminAuditLogList>;
 }
 
@@ -108,8 +122,9 @@ async function getTableColumns(table: PlatformTable): Promise<Set<string> | null
   };
   let definition = schemas[table];
   if (!definition) {
-    const reference = document.paths?.[`/${table}`]?.get?.responses?.["200"]
-      ?.schema?.$ref;
+    const schema = document.paths?.[`/${table}`]?.get?.responses?.["200"]
+      ?.schema;
+    const reference = schema?.items?.$ref ?? schema?.$ref;
     const referenceName = reference?.split("/").at(-1);
     if (referenceName) definition = schemas[referenceName];
   }
@@ -132,8 +147,14 @@ function schemaMessage(label: string, status: SchemaStatus): string {
 
 function nullableString(value: unknown): string | null {
   if (typeof value === "string") return value;
-  if (typeof value === "number") return String(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
   return null;
+}
+
+function nullableDate(value: unknown): Date | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function escapeLikeTerm(value: string): string {
@@ -268,16 +289,28 @@ export function createAdminService(): AdminService {
         moderatorSchema,
         auditSchema,
         profilesSchema,
+        usersSchema,
         reportsSchema,
         moderationSchema,
         platformAuditSchema,
+        verificationRequestsSchema,
+        channelApprovalsSchema,
+        reportReasonsSchema,
+        featuredItemsSchema,
+        dailyPrizesSchema,
       ] = await Promise.all([
         inspectTable(MODERATOR_TABLE),
         inspectTable(AUDIT_TABLE),
         inspectTable("profiles"),
+        inspectTable("users"),
         inspectTable("reports"),
         inspectTable("moderation"),
         inspectTable("audit_logs"),
+        inspectTable("verification_requests"),
+        inspectTable("channel_approvals"),
+        inspectTable("report_reasons"),
+        inspectTable("featured_items"),
+        inspectTable("daily_prizes"),
       ]);
 
       return {
@@ -287,9 +320,15 @@ export function createAdminService(): AdminService {
         moderatorSchema,
         auditSchema,
         profilesSchema,
+        usersSchema,
         reportsSchema,
         moderationSchema,
         platformAuditSchema,
+        verificationRequestsSchema,
+        channelApprovalsSchema,
+        reportReasonsSchema,
+        featuredItemsSchema,
+        dailyPrizesSchema,
         base44Api: "not_connected",
         // Supabase URL and anon key are public client configuration. The
         // service-role key and owner email are deliberately never returned.
@@ -367,15 +406,18 @@ export function createAdminService(): AdminService {
       if (!client || (await inspectTable(AUDIT_TABLE)) !== "ready") return;
 
       try {
-        await client.from(AUDIT_TABLE).insert({
+        const { error } = await client.from(AUDIT_TABLE).insert({
           actor_user_id: event.actorUserId,
           actor_email: event.actorEmail,
           action: event.action,
           affected_record_id: event.affectedRecordId ?? null,
           outcome: event.outcome,
         });
+        if (error) {
+          logger.warn({ action: event.action }, "Admin audit event could not be persisted");
+        }
       } catch {
-        // Audit failures must not expose credentials or break an auth check.
+        logger.warn({ action: event.action }, "Admin audit event could not be persisted");
       }
     },
 
@@ -383,20 +425,50 @@ export function createAdminService(): AdminService {
       const config = environment();
       const [
         profilesSchema,
+        usersSchema,
         reportsSchema,
         moderationSchema,
         auditSchema,
-        users,
-        reports,
-        moderationItems,
+        platformAuditSchema,
+        verificationRequestsSchema,
+        channelApprovalsSchema,
+        reportReasonsSchema,
+        featuredItemsSchema,
+        dailyPrizesSchema,
       ] = await Promise.all([
         inspectTable("profiles"),
+        inspectTable("users"),
         inspectTable("reports"),
         inspectTable("moderation"),
         inspectTable(AUDIT_TABLE),
-        countRows("profiles"),
+        inspectTable("audit_logs"),
+        inspectTable("verification_requests"),
+        inspectTable("channel_approvals"),
+        inspectTable("report_reasons"),
+        inspectTable("featured_items"),
+        inspectTable("daily_prizes"),
+      ]);
+      const userTable = profilesSchema === "ready"
+        ? "profiles"
+        : usersSchema === "ready"
+          ? "users"
+          : null;
+      const [
+        users,
+        reports,
+        moderationItems,
+        verificationRequests,
+        channelApprovals,
+        featuredItems,
+        dailyPrizes,
+      ] = await Promise.all([
+        userTable ? countRows(userTable) : Promise.resolve(null),
         countRows("reports"),
         countRows("moderation"),
+        countRows("verification_requests"),
+        countRows("channel_approvals"),
+        countRows("featured_items"),
+        countRows("daily_prizes"),
       ]);
 
       const integration = (
@@ -433,8 +505,10 @@ export function createAdminService(): AdminService {
           integration(
             "profiles",
             "Supabase profiles",
-            platformStatus(profilesSchema),
-            schemaMessage("profiles", profilesSchema),
+            platformStatus(profilesSchema === "ready" ? profilesSchema : usersSchema),
+            profilesSchema === "ready"
+              ? schemaMessage("profiles", profilesSchema)
+              : schemaMessage("users", usersSchema),
           ),
           integration(
             "reports",
@@ -447,6 +521,42 @@ export function createAdminService(): AdminService {
             "Supabase moderation",
             platformStatus(moderationSchema),
             schemaMessage("moderation", moderationSchema),
+          ),
+          integration(
+            "verification-requests",
+            "Supabase verification_requests",
+            platformStatus(verificationRequestsSchema),
+            schemaMessage("verification_requests", verificationRequestsSchema),
+          ),
+          integration(
+            "channel-approvals",
+            "Supabase channel_approvals",
+            platformStatus(channelApprovalsSchema),
+            schemaMessage("channel_approvals", channelApprovalsSchema),
+          ),
+          integration(
+            "report-reasons",
+            "Supabase report_reasons",
+            platformStatus(reportReasonsSchema),
+            schemaMessage("report_reasons", reportReasonsSchema),
+          ),
+          integration(
+            "featured-items",
+            "Supabase featured_items",
+            platformStatus(featuredItemsSchema),
+            schemaMessage("featured_items", featuredItemsSchema),
+          ),
+          integration(
+            "daily-prizes",
+            "Supabase daily_prizes",
+            platformStatus(dailyPrizesSchema),
+            schemaMessage("daily_prizes", dailyPrizesSchema),
+          ),
+          integration(
+            "platform-audit",
+            "Supabase audit_logs",
+            platformStatus(platformAuditSchema),
+            schemaMessage("audit_logs", platformAuditSchema),
           ),
           integration(
             "audit",
@@ -477,26 +587,42 @@ export function createAdminService(): AdminService {
           users,
           reports,
           moderationItems,
-          pendingVerification: null,
+          verificationRequests,
+          channelApprovals,
+          featuredItems,
+          dailyPrizes,
         },
       };
     },
 
     async getUsers(search) {
-      const status = await inspectTable("profiles");
+      const profilesStatus = await inspectTable("profiles");
+      const usersStatus = profilesStatus === "ready"
+        ? "missing"
+        : await inspectTable("users");
+      const table = profilesStatus === "ready"
+        ? "profiles"
+        : usersStatus === "ready"
+          ? "users"
+          : null;
+      const status = table
+        ? "ready"
+        : profilesStatus === "unavailable"
+          ? profilesStatus
+          : usersStatus;
       if (status !== "ready") {
         return listFailure(
           toDataListStatus(status),
-          schemaMessage("profiles", status),
+          schemaMessage("profiles or users", status),
         );
       }
 
       const client = getServiceClient();
-      const columns = await getTableColumns("profiles");
+      const columns = await getTableColumns(table!);
       if (!client || !columns) {
         return listFailure(
           "unavailable",
-          "The profiles table is reachable, but its searchable fields could not be safely verified.",
+          "The user table is reachable, but its searchable fields could not be safely verified.",
         );
       }
 
@@ -534,7 +660,7 @@ export function createAdminService(): AdminService {
       }
 
       try {
-        let query = client.from("profiles").select(selected.join(","));
+        let query = client.from(table!).select(selected.join(","));
         if (queryText && searchColumn) {
           query = query.ilike(searchColumn, `%${escapeLikeTerm(queryText)}%`);
         }
@@ -557,14 +683,14 @@ export function createAdminService(): AdminService {
               ? "No profiles match this search."
               : "No registered user profiles are present yet.",
           entries: data.map((value) => {
-            const row = value as Record<string, unknown>;
+            const row = value as unknown as Record<string, unknown>;
             return {
               id: String(row[idColumn]),
               username: nullableString(row.username),
               displayName: nullableString(row.display_name ?? row.full_name),
               email: nullableString(row.email),
               status: nullableString(row.status),
-              createdAt: nullableString(row.created_at),
+              createdAt: nullableDate(row.created_at),
             };
           }),
         };
@@ -626,7 +752,7 @@ export function createAdminService(): AdminService {
             ? `Showing ${data.length} report${data.length === 1 ? "" : "s"} (maximum 100 per request). Report text, attachments, and message content are not queried.`
             : "No report records are present yet. Report text, attachments, and message content are not queried.",
           entries: data.map((value) => {
-            const row = value as Record<string, unknown>;
+            const row = value as unknown as Record<string, unknown>;
             return {
               id: String(row[idColumn]),
               status: nullableString(row.status),
@@ -634,7 +760,7 @@ export function createAdminService(): AdminService {
               targetId: nullableString(row.target_id),
               reporterId: nullableString(row.reporter_id ?? row.reporter_user_id),
               reportedUserId: nullableString(row.reported_user_id),
-              createdAt: nullableString(row.created_at),
+              createdAt: nullableDate(row.created_at),
             };
           }),
         };
@@ -696,7 +822,7 @@ export function createAdminService(): AdminService {
             ? `Showing ${data.length} moderation records (maximum 100 per request). Content bodies are not queried.`
             : "No moderation records are present yet. Content bodies are not queried.",
           entries: data.map((value) => {
-            const row = value as Record<string, unknown>;
+            const row = value as unknown as Record<string, unknown>;
             return {
               id: String(row[idColumn]),
               status: nullableString(row.status),
@@ -704,12 +830,141 @@ export function createAdminService(): AdminService {
               targetType: nullableString(row.target_type),
               targetId: nullableString(row.target_id),
               moderatorId: nullableString(row.moderator_id ?? row.reviewer_id),
-              createdAt: nullableString(row.created_at),
+              createdAt: nullableDate(row.created_at),
             };
           }),
         };
       } catch {
         return listFailure("unavailable", "Moderation metadata could not be read.");
+      }
+    },
+
+    async getDataset(source) {
+      const tableBySource: Record<AdminDataSource, PlatformTable> = {
+        verification_requests: "verification_requests",
+        channel_approvals: "channel_approvals",
+        report_reasons: "report_reasons",
+        featured_items: "featured_items",
+        daily_prizes: "daily_prizes",
+      };
+      const table = tableBySource[source];
+      const status = await inspectTable(table);
+      if (status !== "ready") {
+        return {
+          source,
+          ...listFailure(toDataListStatus(status), schemaMessage(table, status)),
+        };
+      }
+
+      const client = getServiceClient();
+      const columns = await getTableColumns(table);
+      if (!client || !columns) {
+        return {
+          source,
+          ...listFailure(
+            "unavailable",
+            `The ${table} table is reachable, but its metadata fields could not be safely verified.`,
+          ),
+        };
+      }
+
+      const idColumn = ["id", "request_id", "approval_id", "item_id"]
+        .find((column) => columns.has(column));
+      if (!idColumn) {
+        return {
+          source,
+          ...listFailure(
+            "unavailable",
+            `The ${table} table has no recognized record identifier; no records were returned.`,
+          ),
+        };
+      }
+
+      const candidates: Record<
+        AdminDataSource,
+        { status: string[]; label: string[]; type: string[]; relatedId: string[] }
+      > = {
+        verification_requests: {
+          status: ["status", "state"],
+          label: [],
+          type: ["request_type", "type"],
+          relatedId: ["user_id", "profile_id"],
+        },
+        channel_approvals: {
+          status: ["status", "state"],
+          label: [],
+          type: ["channel_type", "type"],
+          relatedId: ["channel_id", "channel_uuid", "requester_id", "user_id"],
+        },
+        report_reasons: {
+          status: ["is_active", "active", "status"],
+          label: ["label", "name", "title"],
+          type: ["key", "code", "slug"],
+          relatedId: [],
+        },
+        featured_items: {
+          status: ["status", "is_featured", "featured"],
+          label: [],
+          type: ["target_type", "content_type", "type"],
+          relatedId: ["target_id", "post_id", "content_id"],
+        },
+        daily_prizes: {
+          status: ["status", "is_active", "active"],
+          label: ["name", "title", "prize_name"],
+          type: ["prize_type", "type"],
+          relatedId: [],
+        },
+      };
+      const pickColumn = (names: string[]) => names.find((name) => columns.has(name));
+      const selected = [
+        idColumn,
+        pickColumn(candidates[source].status),
+        pickColumn(candidates[source].label),
+        pickColumn(candidates[source].type),
+        pickColumn(candidates[source].relatedId),
+        columns.has("created_at") ? "created_at" : undefined,
+      ].filter((value): value is string => Boolean(value));
+
+      try {
+        let query = client.from(table).select(selected.join(","));
+        if (columns.has("created_at")) {
+          query = query.order("created_at", { ascending: false });
+        }
+        const { data, error } = await query.limit(100);
+        if (error || !data) {
+          return {
+            source,
+            ...listFailure("unavailable", `${table} metadata could not be read.`),
+          };
+        }
+        const fields = candidates[source];
+        const statusColumn = pickColumn(fields.status);
+        const labelColumn = pickColumn(fields.label);
+        const typeColumn = pickColumn(fields.type);
+        const relatedIdColumn = pickColumn(fields.relatedId);
+        return {
+          source,
+          status: "connected",
+          message: data.length
+            ? `Showing ${data.length} ${table.replaceAll("_", " ")} records (maximum 100 per request).`
+            : `No ${table.replaceAll("_", " ")} records are present yet.`,
+          entries: data.map((value) => {
+            const row = value as unknown as Record<string, unknown>;
+            return {
+              id: String(row[idColumn]),
+              status: statusColumn ? nullableString(row[statusColumn]) : null,
+              label: labelColumn ? nullableString(row[labelColumn]) : null,
+              type: typeColumn ? nullableString(row[typeColumn]) : null,
+              relatedId: relatedIdColumn ? nullableString(row[relatedIdColumn]) : null,
+              createdAt: nullableDate(row.created_at),
+            };
+          }),
+        };
+      } catch {
+        return {
+          source,
+          ...listFailure("unavailable", `${table} metadata could not be read.`),
+        };
       }
     },
 

@@ -136,6 +136,34 @@ paths:
           description: Missing or invalid verified Supabase session
         "403":
           description: User is not authorized to read moderation records
+  /admin/data:
+    get:
+      operationId: getAdminData
+      tags: [admin]
+      summary: Read metadata from an explicitly supported Bixgram table
+      description: Only fixed, server-allowlisted tables and metadata columns are available. Content bodies and private messages are never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: source
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [verification_requests, channel_approvals, report_reasons, featured_items, daily_prizes]
+      responses:
+        "200":
+          description: Table metadata or an explicit unavailable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDataList"
+        "400":
+          description: Unsupported data source
+        "401":
+          description: Missing or invalid verified Supabase session
+        "403":
+          description: User is not authorized to read the requested data
   /admin/audit-logs:
     get:
       operationId: getAdminAuditLogs
@@ -170,7 +198,7 @@ components:
         - status
     AdminConfig:
       type: object
-      required: [authConfigured, ownerConfigured, serviceRoleConfigured, moderatorSchema, auditSchema, profilesSchema, reportsSchema, moderationSchema, platformAuditSchema, base44Api]
+      required: [authConfigured, ownerConfigured, serviceRoleConfigured, moderatorSchema, auditSchema, profilesSchema, usersSchema, reportsSchema, moderationSchema, platformAuditSchema, verificationRequestsSchema, channelApprovalsSchema, reportReasonsSchema, featuredItemsSchema, dailyPrizesSchema, base44Api]
       properties:
         authConfigured: { type: boolean }
         ownerConfigured: { type: boolean }
@@ -178,9 +206,15 @@ components:
         moderatorSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         auditSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         profilesSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        usersSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         reportsSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         moderationSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         platformAuditSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        verificationRequestsSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        channelApprovalsSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        reportReasonsSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        featuredItemsSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
+        dailyPrizesSchema: { type: string, enum: [ready, missing, not_connected, unavailable] }
         base44Api: { type: string, enum: [connected, not_connected] }
         supabaseUrl: { type: [string, "null"] }
         supabaseAnonKey: { type: [string, "null"] }
@@ -215,7 +249,10 @@ components:
             users: { type: [integer, "null"] }
             reports: { type: [integer, "null"] }
             moderationItems: { type: [integer, "null"] }
-            pendingVerification: { type: [integer, "null"] }
+            verificationRequests: { type: [integer, "null"] }
+            channelApprovals: { type: [integer, "null"] }
+            featuredItems: { type: [integer, "null"] }
+            dailyPrizes: { type: [integer, "null"] }
     AdminDataListStatus:
       type: string
       enum: [connected, not_connected, missing_schema, unavailable]
@@ -278,6 +315,29 @@ components:
         entries:
           type: array
           items: { $ref: "#/components/schemas/AdminModerationSummary" }
+    AdminDataSource:
+      type: string
+      enum: [verification_requests, channel_approvals, report_reasons, featured_items, daily_prizes]
+    AdminDataRecord:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        status: { type: ["string", "null"] }
+        label: { type: ["string", "null"] }
+        type: { type: ["string", "null"] }
+        relatedId: { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"], format: date-time }
+    AdminDataList:
+      type: object
+      required: [source, status, entries]
+      properties:
+        source: { $ref: "#/components/schemas/AdminDataSource" }
+        status: { $ref: "#/components/schemas/AdminDataListStatus" }
+        message: { type: string }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/AdminDataRecord" }
     AdminAuditLog:
       type: object
       required: [id, action, outcome, createdAt]

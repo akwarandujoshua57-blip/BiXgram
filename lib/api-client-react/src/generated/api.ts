@@ -18,11 +18,13 @@ import type {
 import type {
   AdminAuditLogList,
   AdminConfig,
+  AdminDataList,
   AdminModerationList,
   AdminOverview,
   AdminReportList,
   AdminSession,
   AdminUserList,
+  GetAdminDataParams,
   GetAdminUsersParams,
   HealthStatus
 } from './api.schemas';
@@ -590,6 +592,91 @@ export function useGetAdminModeration<TData = Awaited<ReturnType<typeof getAdmin
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAdminModerationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAdminDataUrl = (params: GetAdminDataParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/data?${stringifiedParams}` : `/api/admin/data`
+}
+
+/**
+ * Only fixed, server-allowlisted tables and metadata columns are available. Content bodies and private messages are never returned.
+ * @summary Read metadata from an explicitly supported Bixgram table
+ */
+export const getAdminData = async (params: GetAdminDataParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminDataList> => {
+
+  return customFetch<AdminDataList>(getGetAdminDataUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminDataQueryKey = (params?: GetAdminDataParams,) => {
+    return [
+    `/api/admin/data`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAdminDataQueryOptions = <TData = Awaited<ReturnType<typeof getAdminData>>, TError = ErrorType<void>>(params: GetAdminDataParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminDataQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminData>>> = ({ signal }) => getAdminData(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminData>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminDataQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminData>>>
+export type GetAdminDataQueryError = ErrorType<void>
+
+
+/**
+ * @summary Read metadata from an explicitly supported Bixgram table
+ */
+
+export function useGetAdminData<TData = Awaited<ReturnType<typeof getAdminData>>, TError = ErrorType<void>>(
+ params: GetAdminDataParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminDataQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

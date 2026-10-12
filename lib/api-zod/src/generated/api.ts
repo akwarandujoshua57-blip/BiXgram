@@ -28,9 +28,15 @@ export const GetAdminConfigResponse = zod.object({
   "moderatorSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "auditSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "profilesSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "usersSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "reportsSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "moderationSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "platformAuditSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "verificationRequestsSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "channelApprovalsSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "reportReasonsSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "featuredItemsSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
+  "dailyPrizesSchema": zod.enum(['ready', 'missing', 'not_connected', 'unavailable']),
   "base44Api": zod.enum(['connected', 'not_connected']),
   "supabaseUrl": zod.string().nullish(),
   "supabaseAnonKey": zod.string().nullish()
@@ -61,7 +67,10 @@ export const GetAdminOverviewResponse = zod.object({
   "users": zod.number().int().nullish(),
   "reports": zod.number().int().nullish(),
   "moderationItems": zod.number().int().nullish(),
-  "pendingVerification": zod.number().int().nullish()
+  "verificationRequests": zod.number().int().nullish(),
+  "channelApprovals": zod.number().int().nullish(),
+  "featuredItems": zod.number().int().nullish(),
+  "dailyPrizes": zod.number().int().nullish()
 }).optional().describe('Counts are null until connected data is actually available.')
 })
 
@@ -122,6 +131,29 @@ export const GetAdminModerationResponse = zod.object({
   "targetType": zod.string().nullish(),
   "targetId": zod.string().nullish(),
   "moderatorId": zod.string().nullish(),
+  "createdAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * Only fixed, server-allowlisted tables and metadata columns are available. Content bodies and private messages are never returned.
+ * @summary Read metadata from an explicitly supported Bixgram table
+ */
+export const GetAdminDataQueryParams = zod.object({
+  "source": zod.enum(['verification_requests', 'channel_approvals', 'report_reasons', 'featured_items', 'daily_prizes'])
+})
+
+export const GetAdminDataResponse = zod.object({
+  "source": zod.enum(['verification_requests', 'channel_approvals', 'report_reasons', 'featured_items', 'daily_prizes']),
+  "status": zod.enum(['connected', 'not_connected', 'missing_schema', 'unavailable']),
+  "message": zod.string().optional(),
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "status": zod.string().nullish(),
+  "label": zod.string().nullish(),
+  "type": zod.string().nullish(),
+  "relatedId": zod.string().nullish(),
   "createdAt": zod.coerce.date().nullish()
 }))
 })
